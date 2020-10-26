@@ -1,6 +1,9 @@
 # SDL2 on F#
+Pure dotnet-core (not .NET Framework 3 or 4), non-Mono depentedant F# sample code to interface with libSDL2
 
-Sample code to interface with https://www.libsdl.org/
+* SDL2 lib for the platforms of your choices can be found at https://www.libsdl.org/
+* SDL2-CS (C# InterOp proxy/wrapper) can be found at: https://github.com/flibitijibibo/SDL2-CS
+* Sample app to run is based off of https://www.willusher.io/sdl2%20tutorials/2013/08/17/lesson-1-hello-world
 
 ## Summary
 * dotnet (without the .NET 4 Framework and/or mono)
@@ -11,7 +14,7 @@ Sample code to interface with https://www.libsdl.org/
 * libSDL2 (please don't ask me about Windows or Mac), I will just assume you're here because you already are using it or have installed it
 
 ## Notes
-* There are handful of NuGet that wraps SDL2; only tried one or two, but they want to be MonoGames or OpenTK friendly (or something) and rely on mono and/or .NET framework; I do not want them, so opted to go with source code instead
+* There are handful of NuGet that wraps SDL2; only tried one or two, but they want to be MonoGames or OpenTK friendly (or something) and rely on mono and/or .NET framework; I do not want them (I only want to support dotnet-core without .NET Framework 3 or 4), so opted to go with source code instead
 * SDL2-CS is relying on .NET 4 framework, but I don't need it; hence I do `git submodule` and hand-delete their .csproj files and use my own
 * SDL2-CS is just a wrapper, I started doing my own dllImport but honestly, I'm purely lazy, so decided to just take SDL2-CS (just the src dir) instead
 * Possibly, will contact the maintainer of SDL2-CS and request a pure dotnetcore CSProj file; either that or fork and just remove the author's csproj
