@@ -1,0 +1,105 @@
+{
+    "Image": "Sonic-Idle.png",
+    "Sprites":[
+        {
+            "ID": 0,
+            "X": 1,
+            "Y": 6,
+            "Width": 29,
+            "Height": 42,
+            "HotPointX": 9,
+            "HotPointY": 2,
+            "CollisionX": 0,
+            "CollsionY": 0,
+            "CollsionWidth": 29,
+            "CollisionHeight": 42
+        },
+        {
+            "ID": 1,
+            "X": 32,
+            "Y": 6,
+            "Width": 30,
+            "Height": 42,
+            "HotPointX": 8,
+            "HotPointY": 2,
+            "CollisionX": 0,
+            "CollsionY": 0,
+            "CollsionWidth": 30,
+            "CollisionHeight": 42
+        },
+        {
+            "ID": 2,
+            "X": 64,
+            "Y": 6,
+            "Width": 31,
+            "Height": 42,
+            "HotPointX": 8,
+            "HotPointY": 2,
+            "CollisionX": 0,
+            "CollsionY": 0,
+            "CollsionWidth": 31,
+            "CollisionHeight": 42
+        },
+        {
+            "ID": 3,
+            "X": 97,
+            "Y": 6,
+            "Width": 30,
+            "Height": 42,
+            "HotPointX": 7,
+            "HotPointY": 2,
+            "CollisionX": 0,
+            "CollsionY": 0,
+            "CollsionWidth": 30,
+            "CollisionHeight": 42
+        }
+    ],
+    "Animations": [
+        {
+            "Name": "Idle",
+            "Animation": {
+                "Frames": [
+                    {
+                        "ID": 0,
+                        "FPS": 1.0
+                    },
+                    {
+                        "ID": 1,
+                        "FPS": 1.0
+                    },
+                    {
+                        "ID": 2,
+                        "FPS": 4.0
+                    },
+                    {
+                        "ID": 2,
+                        "FPS": 1.0
+                    },
+                    {
+                        "ID": 3,
+                        "FPS": 1.0
+                    }
+                ],
+                "StepDirection": 1,
+                "RepeatLoopIndex": 3
+            }
+        },
+        {
+            "Name": "Impatient",
+            "Animation": {
+                "Frames": [
+                    {
+                        "ID": 2,
+                        "FPS": 1.0
+                    },
+                    {
+                        "ID": 3,
+                        "FPS": 1.0
+                    }
+                ],
+                "StepDirection": 1,
+                "RepeatLoopIndex": 0
+            }
+        }
+    ]
+}

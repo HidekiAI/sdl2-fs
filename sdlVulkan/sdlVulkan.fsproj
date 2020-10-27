@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\libSDL2Wrapper\libSDL2Wrapper.fsproj" />
+    <ProjectReference Include="..\SDL2-CSharp\SDL2-CSharp.csproj" />
+  </ItemGroup>
+
+</Project>
