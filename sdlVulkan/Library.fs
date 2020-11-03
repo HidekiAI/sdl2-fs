@@ -1,6 +1,7 @@
 namespace sdlfs
 
 open System
+open SDL2 // we'll be accessing SDL_Texture
 
 module libVulkan =
     let init = libSDLWrapper.initSDLVulkan
