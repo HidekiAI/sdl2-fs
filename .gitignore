@@ -274,3 +274,6 @@ tags
 *.swp
 *.sw?
 *.htm
+
+build/
+

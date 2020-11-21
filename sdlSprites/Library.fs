@@ -24,7 +24,14 @@ type SpriteMatrix = Matrix<float>
 
 type SpriteVector = Vector<float>
 type SpritePoint = Vector<float>
-type SpriteRect = { Width: uint16; Height: uint16 }
+// Breif note about SDL_Rect (more so, about C/C++ struct): Look into [<StructLayout>], [<MarshalAs>], and [<DefaultValue>]
+[<System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)>]
+type SpriteRect =
+    val x: int32
+    val y: int32
+    val w: int32
+    val h: int32
+    new(_x, _y, _w, _h) = { x = _x; y = _y; w = _w; h = _h }
 
 // Future considerations:
 // * for textures bitmap/atlas that could not be loaded (i.e. bigger than 64K pixels) should be assigned with annoyingly bright magenta textures
@@ -63,18 +70,25 @@ type SpriteAnimation =
     | Frame of SpriteFrame
     | Loop of uint32
 
+type SpriteCellAnimation =
+    { CurrentCellIndex: int32
+      CurrentAnimationIndex: int32
+      CurrentAnimationTick: float }
+
 // One animation per sprite; there are some sprites that are from same SpriteCells shared for each Animations
 type Sprite =
     { ID: uint32 // 1-based ID, Not to be confused from SpriteCell.ID (unlike SpriteCell.ID==0, this.ID can never be 0!  if it is 0, it is just a place-holder of a "null sprite" - usually because Texture cannot be found any more)
+      Name: string // in most use-cases, Sprite.ID is meaningless compared to Sprite.Name
 
       Cells: SpriteCell []
-      AbsolutePosition: SpritePoint // this.is where the HotPoints lands, NOT the upper left corner of each sprites, unless that's where the HotPoints of each sprites are
       // Scale, orientation, and translation
+      // Last vector is translation (position) for rendering, for example the hot-point (which is the local coordinate) that gets ADDED to this world cordinate
       SpriteMatrix: SpriteMatrix
 
       // One Animation sequence per Sprite
       Animation: SpriteAnimation []
       StepDirection: int8 // +1 to loop forward, 0 to not loop at all (if multiple SpriteID[] exist, always at SpriteID[0]), -1 to loop backwards
+      SpriteAnimationInfo: SpriteCellAnimation
 
       // With Acceleration and Velocity, it can deal with primitive Newtonian physics
       Velocity: SpriteVector
@@ -131,10 +145,10 @@ type SpriteBuilder(maxSprites) =
     // but any sprites added to each (this.X) sprite system should not collide/overlap
     // on IDs
     let mutable spriteCellID: uint32 = 0u
-    let mutable spriteID: uint32 = 0u
+    let mutable spriteID: uint32 = 0u // Q: Do we need this?  Users will most likely manage based on Sprite.Name
     // disposable list...
     let mutable textures: IntPtr [] = Array.zeroCreate maxSprites
-    let mutable textureIndex: int = 0
+    let mutable textureIndex: int32 = 0
 
     let mapTextureIndexToID =
         textures
@@ -150,12 +164,9 @@ type SpriteBuilder(maxSprites) =
     let buildSpriteCell (animSprite: SpriteFileSprite) textureId =
         { ID = animSprite.ID
           TextureID = textureId
-          RelativeBoundary =
-              { Width = animSprite.Width
-                Height = animSprite.Height }
+          RelativeBoundary = new SpriteRect(0, 0, int32 (animSprite.Width), int32 (animSprite.Height))
           RelativeCollisionRect =
-              { Width = animSprite.CollsionWidth
-                Height = animSprite.CollisionHeight }
+              new SpriteRect(0, 0, int32 (animSprite.CollsionWidth), int32 (animSprite.CollisionHeight))
           RelativeHotPoint =
               vector [ float (animSprite.HotPointX)
                        float (animSprite.HotPointY)
@@ -163,12 +174,17 @@ type SpriteBuilder(maxSprites) =
 
     let buildSprite spriteId (spriteFileSprite: SpriteFileAnimation) (spriteCells: SpriteCell []) animations =
         { ID = spriteId
+          Name = spriteFileSprite.Name
           Cells = spriteCells
-          AbsolutePosition = vector [ 0.0; 0.0; 0.0; 0.0 ]
           Animation = animations
           StepDirection = spriteFileSprite.Animation.StepDirection
+          SpriteAnimationInfo =
+              { CurrentCellIndex = 0
+                CurrentAnimationIndex = 0
+                CurrentAnimationTick = 0.0 }
           Velocity = vector [ 0.0; 0.0; 0.0; 0.0 ]
           Acceleration = vector [ 0.0; 0.0; 0.0; 0.0 ]
+          Overlapped = [||]
           DeleteWhenOffScreen = false
           SleepWhenOffScreen = true
           SoundID = 0u
@@ -190,14 +206,20 @@ type SpriteBuilder(maxSprites) =
         | None, None -> failwith "Either frame or loop data has to be valid"
         | Some _, Some _ -> failwith "Cannot have both looping and frame info to be populated"
 
+    /// load to GPU as texture
+    /// TODO: In future, support software renderer by tracking surface (currently only texture for GPU)
     let load window renderer (spriteAnimationJson: SpriteFile): Sprite [] =
+        // blit to RAM
         let surface =
             libSDLWrapper.getSurfaceBitMap window renderer false spriteAnimationJson.Image // assum this to throw, so it'll bail out if this fails to load
 
+        // now that we know it's safe to RAM, move it over to GPU (as texture)
         // persist texture (because they need to be disposed on shutdown) and incremnt (global) textureIndex
+        let destroySurface = true
+
         let texture =
             if not (surface.Equals(IntPtr.Zero))
-            then libSDLWrapper.getTexture window renderer surface false
+            then libSDLWrapper.getTexture window renderer surface destroySurface false
             else failwith "Unable to load Sprite atlas file"
 
         textures.[textureIndex] <- texture
@@ -230,6 +252,12 @@ type SpriteBuilder(maxSprites) =
         spriteID <- spriteID + uint32 (sprites.Length)
         sprites // TODO: Possibly persist this and expose `this.GetSprites` member?  IMHO if the caller loses scope of this array, it's their fault!
 
+    let getWorldPosition sprite =
+        let transX = sprite.SpriteMatrix.[3].[0]
+        let transY = sprite.SpriteMatrix.[3].[1]
+        let transZ = sprite.SpriteMatrix.[3].[2]
+        vector [ transX; transY; transZ ]
+
     ///////////////////////////////////////////////////////// public interfaces
     /// MaxSpriteIndex is useful/needed for iterating Sprites as Entity
     member this.MaxSpriteIndex = spriteID
@@ -245,3 +273,79 @@ type SpriteBuilder(maxSprites) =
     /// Tools (i.e. world editor) and world systems just calls this and will get list of Sprite[]
     member this.Load window renderer jsonFilename =
         loadAnimation jsonFilename |> load window renderer
+
+    member this.Draw renderer window sprites =
+        let textureMap = mapTextureIndexToID
+
+        let mutable winWidth = 640
+        let mutable winHeight = 480
+        SDL.SDL_GetDrawableSize(window, ref winWidth, ref winHeight)
+        let windowRect = SDL_Rect(0, 0, winWidth, winHeight)
+
+        sprites
+        |> Array.mapi (fun spriteIndex animSprite ->
+            let info = animSprite.SpriteAnimationInfo
+            let cell = animSprite.Cells.[info.CurrentCellIndex]
+            let spriteRect = cell.RelativeCollisionRect
+
+            let textureIndex =
+                textureMap
+                |> Array.find (fun elem -> elem.Texture = cell.TextureID)
+                |> fun il -> il.[0].Index
+
+            let texture = textures.[textureIndex]
+            SDL.SDL_RenderCopy(renderer, texture, ref spriteRect, ref windowRect))
+
+    member this.GetWorldPostionHotPoint sprite =
+        let pos = getWorldPosition sprite
+        let currentAnimInfo = sprite.SpriteAnimationInfo
+
+        let hotPointX =
+            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+                .RelativeHotPoint.[0]
+
+        let hotPointY =
+            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+                .RelativeHotPoint.[1]
+
+        let hotPointZ =
+            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+                .RelativeHotPoint.[2]
+        // NOTE: Possibly just use the darn MathLib's vector addition
+        vector [ pos.[0] + hotPointX
+                 pos.[1] + hotPointY
+                 pos.[2] + hotPointZ ]
+
+    member this.WorldTranslateLocal sprite localPositionVector =
+        let pos = getWorldPosition sprite
+
+        let newPos =
+            [ pos.[0] + localPositionVector.[0]
+              pos.[1] + localPositionVector.[1]
+              pos.[2] + localPositionVector.[2] ]
+
+        let m = sprite.SpriteMatrix
+
+        let newMatrix =
+            [ [ m.[0].[0] m [ 0 ].[1] m.[0].[2] m.[0].[3] ]
+              [ m.[1].[0] m [ 1 ].[1] m.[1].[2] m.[1].[3] ]
+              [ m.[2].[0] m [ 2 ].[1] m.[2].[2] m.[2].[3] ]
+              [ newPos.[0] newPos.[1] newPos.[2] m.[3].[3] ] ]
+
+        let newSprite = { sprite with SpriteMatrix = newMatrix }
+        newSprite
+
+    member this.SetWorldTranslate sprite absoluteWorldPositionVector =
+        let m = sprite.SpriteMatrix
+
+        let newMatrix =
+            [ [ m.[0].[0] m [ 0 ].[1] m.[0].[2] m.[0].[3] ]
+              [ m.[1].[0] m [ 1 ].[1] m.[1].[2] m.[1].[3] ]
+              [ m.[2].[0] m [ 2 ].[1] m.[2].[2] m.[2].[3] ]
+              [ absoluteWorldPositionVector.[0]
+                  absoluteWorldPositionVector.[1]
+                    absoluteWorldPositionVector.[2]
+                    m.[3].[3] ] ]
+
+        let newSprite = { sprite with SpriteMatrix = newMatrix }
+        newSprite

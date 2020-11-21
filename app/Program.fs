@@ -15,7 +15,7 @@ let main argv =
     match libSDLWrapper.initSDLVideo with
     | 0 ->
         let window =
-            libSDLWrapper.getWindow "Hello World!" 100 100 640 480
+            libSDLWrapper.getWindow "Hello World!" 100 100 1024 768
 
         let renderer = libSDLWrapper.getRenderer window
 
@@ -23,9 +23,19 @@ let main argv =
             libSDLWrapper.getSurfaceBitMap window renderer true absPath
 
         let texture =
-            libSDLWrapper.getTexture window renderer surfaceBitMap true
+            libSDLWrapper.getTexture window renderer surfaceBitMap true true
 
         libSDLWrapper.doTestRender renderer texture 1000u // 1000mSec per loop
+
+        let spriteBuilder = SpriteBuilder 32
+
+        let sprites =
+            spriteBuilder.Load window renderer @"data/Sonic-Idle.json"
+
+        spriteBuilder.Draw renderer sprites
+
+        let input = SDL.SDL_CreateEvent
+
         libSDLWrapper.shutdown window renderer texture
         0 // return 0 as success
     | errVal -> errVal
