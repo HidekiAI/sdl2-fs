@@ -1,5 +1,6 @@
 open System
 open sdlfs
+open SDL2
 
 [<EntryPoint>]
 let main argv =
@@ -27,12 +28,14 @@ let main argv =
 
         libSDLWrapper.doTestRender renderer texture 1000u // 1000mSec per loop
 
-        let spriteBuilder = SpriteBuilder 32
+        let spriteBuilder =
+            sdlfs.SpriteBuilder( 32 )
 
         let sprites =
             spriteBuilder.Load window renderer @"data/Sonic-Idle.json"
 
-        spriteBuilder.Draw renderer sprites
+        spriteBuilder.Draw renderer window sprites
+        |> ignore
 
         let input = SDL.SDL_CreateEvent
 
