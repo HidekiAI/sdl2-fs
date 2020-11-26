@@ -28,9 +28,9 @@ let main argv =
 
         libSDLWrapper.doTestRender renderer texture 1000u // 1000mSec per loop
 
-        let spriteBuilder =
-            sdlfs.SpriteBuilder( 32 )
+        let spriteBuilder = sdlfs.SpriteBuilder(32)
 
+        // /home/hidekiai/remote/projects/sdl2-fs/sdllogo.bmp
         let sprites =
             spriteBuilder.Load window renderer @"data/Sonic-Idle.json"
 
@@ -42,12 +42,14 @@ let main argv =
             | event when SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED = event ->
                 printf "Window resized: %Ax%A" wEvent.data1 wEvent.data2
             | _ -> failwith "Unhandled SDL Event"
+
         let mutable sdlEvent: SDL.SDL_Event = SDL.SDL_Event()
+
         while (SDL.SDL_PollEvent(ref sdlEvent) = 1) do
             match sdlEvent.typeFSharp with
-            | event when SDL.SDL_EventType.SDL_WINDOWEVENT = event ->
-                handleWindowEvents sdlEvent.window
+            | event when SDL.SDL_EventType.SDL_WINDOWEVENT = event -> handleWindowEvents sdlEvent.window
             | _ -> // do nothing
+                0 |> ignore
             System.Threading.Thread.Sleep 1
 
         //libSDLWrapper.shutdown window renderer texture

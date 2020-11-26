@@ -164,8 +164,7 @@ type SpriteBuilder(maxSprites) =
           RelativeBoundary = TSpriteRect(x = 0, y = 0, w = int32 (animSprite.Width), h = int32 (animSprite.Height))
           RelativeCollisionRect =
               TSpriteRect(x = 0, y = 0, w = int32 (animSprite.CollsionWidth), h = int32 (animSprite.CollisionHeight))
-          RelativeHotPoint =
-              Vector4( float32(animSprite.HotPointX), float32(animSprite.HotPointY), 0.0f , 0.0f ) }
+          RelativeHotPoint = Vector4(float32 (animSprite.HotPointX), float32 (animSprite.HotPointY), 0.0f, 0.0f) }
 
     let buildSprite spriteId (spriteFileSprite: TSpriteFileAnimation) (spriteCells: TSpriteCell []) animations =
         { ID = spriteId
@@ -177,14 +176,13 @@ type SpriteBuilder(maxSprites) =
               { CurrentCellIndex = 0
                 CurrentAnimationIndex = 0
                 CurrentAnimationTick = 0.0 }
-          Velocity = Vector4( 0.0f, 0.0f, 0.0f, 0.0f )
-          Acceleration = Vector4(0.0f, 0.0f, 0.0f, 0.0f )
+          Velocity = Vector4(0.0f, 0.0f, 0.0f, 0.0f)
+          Acceleration = Vector4(0.0f, 0.0f, 0.0f, 0.0f)
           Overlapped = [||]
           DeleteWhenOffScreen = false
           SleepWhenOffScreen = true
           SoundID = 0u
-          SpriteMatrix = Matrix4x4.Identity
-        }
+          SpriteMatrix = Matrix4x4.Identity }
 
     let buildAnimFrame baseSpriteId (frame: TSpriteFileAnimationAnimationFrame option) (loop: uint32 option) =
         match frame, loop with
@@ -214,7 +212,9 @@ type SpriteBuilder(maxSprites) =
             then libSDLWrapper.getTexture window renderer surface destroySurface false
             else failwith "Unable to load Sprite atlas file"
 
-        if textureIndex >= textures.Length then failwith "Texture index exceeds texture (initialized) capacity"
+        if textureIndex >= textures.Length
+        then failwith "Texture index exceeds texture (initialized) capacity"
+
         textures.[textureIndex] <- texture
         textureIndex <- textureIndex + 1
 
@@ -273,7 +273,9 @@ type SpriteBuilder(maxSprites) =
         let mutable winWidth = 640
         let mutable winHeight = 480
         SDL.SDL_GL_GetDrawableSize(window, ref winWidth, ref winHeight) // either GL or SDL_Vulkan_GetDrawableSize
-        let windowRect = TSpriteRect(x = 0, y = 0, w = int32 (winWidth), h = int32 (winHeight))
+
+        let windowRect =
+            TSpriteRect(x = 0, y = 0, w = int32 (winWidth), h = int32 (winHeight))
 
         sprites
         |> Array.mapi (fun spriteIndex animSprite ->
@@ -283,16 +285,11 @@ type SpriteBuilder(maxSprites) =
 
             let textureIndex =
                 textureMap
-                |> Array.find (fun elem -> uint32(elem.Index) = cell.TextureID)
+                |> Array.find (fun elem -> uint32 (elem.Index) = cell.TextureID)
                 |> fun il -> il.Index
 
             let texture = textures.[textureIndex]
-            SDL.SDL_RenderCopy(
-                            renderer,
-                            texture,
-                            ref spriteRect,
-                            ref windowRect )
-        )
+            SDL.SDL_RenderCopy(renderer, texture, ref spriteRect, ref windowRect))
 
     member this.GetWorldPostionHotPoint sprite =
         let pos = getWorldPosition sprite
@@ -310,28 +307,34 @@ type SpriteBuilder(maxSprites) =
             sprite.Cells.[currentAnimInfo.CurrentCellIndex]
                 .RelativeHotPoint.Z
         // NOTE: Possibly just use the darn MathLib's vector addition
-        Vector4( pos.X + hotPointX,
-                 pos.Y + hotPointY,
-                 pos.Z + hotPointZ,
-                 0.0f )
+        Vector4(pos.X + hotPointX, pos.Y + hotPointY, pos.Z + hotPointZ, 0.0f)
 
     member this.WorldTranslateLocal sprite (localPositionVector: Vector4) =
         let pos = getWorldPosition sprite
 
         let newPos =
-            Vector4( pos.X + localPositionVector.X,
-              pos.Y + localPositionVector.Y,
-              pos.Z + localPositionVector.Z,
-              0.0f)
+            Vector4(pos.X + localPositionVector.X, pos.Y + localPositionVector.Y, pos.Z + localPositionVector.Z, 0.0f)
 
         let m = sprite.SpriteMatrix
 
         let newMatrix =
-            Matrix4x4(
-                  m.M11, m.M12, m.M13, m.M14,
-                  m.M21, m.M22, m.M23, m.M24,
-                  m.M31, m.M32, m.M33, m.M34,
-                  newPos.X, newPos.Y, newPos.Z, m.M44 )
+            Matrix4x4
+                (m.M11,
+                 m.M12,
+                 m.M13,
+                 m.M14,
+                 m.M21,
+                 m.M22,
+                 m.M23,
+                 m.M24,
+                 m.M31,
+                 m.M32,
+                 m.M33,
+                 m.M34,
+                 newPos.X,
+                 newPos.Y,
+                 newPos.Z,
+                 m.M44)
 
         let newSprite = { sprite with SpriteMatrix = newMatrix }
         newSprite
@@ -340,11 +343,23 @@ type SpriteBuilder(maxSprites) =
         let m = sprite.SpriteMatrix
 
         let newMatrix =
-            Matrix4x4(
-                  m.M11, m.M12, m.M13, m.M14,
-                  m.M21, m.M22, m.M23, m.M24,
-                  m.M31, m.M32, m.M33, m.M34,
-                  absoluteWorldPositionVector.X, absoluteWorldPositionVector.Y, absoluteWorldPositionVector.Z, m.M44 )
+            Matrix4x4
+                (m.M11,
+                 m.M12,
+                 m.M13,
+                 m.M14,
+                 m.M21,
+                 m.M22,
+                 m.M23,
+                 m.M24,
+                 m.M31,
+                 m.M32,
+                 m.M33,
+                 m.M34,
+                 absoluteWorldPositionVector.X,
+                 absoluteWorldPositionVector.Y,
+                 absoluteWorldPositionVector.Z,
+                 m.M44)
 
         let newSprite = { sprite with SpriteMatrix = newMatrix }
         newSprite
