@@ -151,6 +151,15 @@ type SpriteBuilder(maxSprites) =
         textures
         |> Array.mapi (fun index pTexture -> {| Index = index; Texture = pTexture |})
 
+    let getWorkDirectory file =
+        if System.IO.File.Exists file then
+            let fileInfo =
+                System.IO.FileInfo file
+            fileInfo.Directory.FullName + "/"
+        else
+            printf "File does not exsit, cannot extract directory path for '%A'" file
+            "./"
+
     let loadAnimation file =
         let json =
             System.IO.File.ReadAllLines(file)
@@ -198,10 +207,15 @@ type SpriteBuilder(maxSprites) =
 
     /// load to GPU as texture
     /// TODO: In future, support software renderer by tracking surface (currently only texture for GPU)
-    let load window renderer (spriteAnimationJson: TSpriteFile): TSprite [] =
+    let load window renderer jsonFileName (spriteAnimationJson: TSpriteFile): TSprite [] =
+        let workDir =
+            getWorkDirectory jsonFileName
+        let imageName =
+            workDir + spriteAnimationJson.Image
+        printf "Attempting to load texture image '%A'" imageName
         // blit to RAM
         let surface =
-            libSDLWrapper.getSurfaceBitMap window renderer false spriteAnimationJson.Image // assum this to throw, so it'll bail out if this fails to load
+            libSDLWrapper.getSurfaceBitMap window renderer false imageName // assum this to throw, so it'll bail out if this fails to load
 
         // now that we know it's safe to RAM, move it over to GPU (as texture)
         // persist texture (because they need to be disposed on shutdown) and incremnt (global) textureIndex
@@ -265,7 +279,8 @@ type SpriteBuilder(maxSprites) =
 
     /// Tools (i.e. world editor) and world systems just calls this and will get list of Sprite[]
     member this.Load window renderer jsonFilename =
-        loadAnimation jsonFilename |> load window renderer
+        loadAnimation jsonFilename
+        |> load window renderer jsonFilename
 
     member this.Draw (renderer: IntPtr) window sprites =
         let textureMap = mapTextureIndexToID
@@ -319,22 +334,10 @@ type SpriteBuilder(maxSprites) =
 
         let newMatrix =
             Matrix4x4
-                (m.M11,
-                 m.M12,
-                 m.M13,
-                 m.M14,
-                 m.M21,
-                 m.M22,
-                 m.M23,
-                 m.M24,
-                 m.M31,
-                 m.M32,
-                 m.M33,
-                 m.M34,
-                 newPos.X,
-                 newPos.Y,
-                 newPos.Z,
-                 m.M44)
+                (m.M11, m.M12, m.M13, m.M14,
+                 m.M21, m.M22, m.M23, m.M24,
+                 m.M31, m.M32, m.M33, m.M34,
+                 newPos.X, newPos.Y, newPos.Z, m.M44)
 
         let newSprite = { sprite with SpriteMatrix = newMatrix }
         newSprite
@@ -344,22 +347,10 @@ type SpriteBuilder(maxSprites) =
 
         let newMatrix =
             Matrix4x4
-                (m.M11,
-                 m.M12,
-                 m.M13,
-                 m.M14,
-                 m.M21,
-                 m.M22,
-                 m.M23,
-                 m.M24,
-                 m.M31,
-                 m.M32,
-                 m.M33,
-                 m.M34,
-                 absoluteWorldPositionVector.X,
-                 absoluteWorldPositionVector.Y,
-                 absoluteWorldPositionVector.Z,
-                 m.M44)
+                (m.M11, m.M12, m.M13, m.M14,
+                 m.M21, m.M22, m.M23, m.M24,
+                 m.M31, m.M32, m.M33, m.M34,
+                 absoluteWorldPositionVector.X, absoluteWorldPositionVector.Y, absoluteWorldPositionVector.Z, m.M44)
 
         let newSprite = { sprite with SpriteMatrix = newMatrix }
         newSprite
