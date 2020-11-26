@@ -37,8 +37,20 @@ let main argv =
         spriteBuilder.Draw renderer window sprites
         |> ignore
 
-        let input = SDL.SDL_CreateEvent
+        let handleWindowEvents (wEvent: SDL.SDL_WindowEvent) =
+            match wEvent.windowEvent with
+            | event when SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED = event ->
+                printf "Window resized: %Ax%A" wEvent.data1 wEvent.data2
+            | _ -> failwith "Unhandled SDL Event"
+        let mutable sdlEvent: SDL.SDL_Event = SDL.SDL_Event()
+        while (SDL.SDL_PollEvent(ref sdlEvent) = 1) do
+            match sdlEvent.typeFSharp with
+            | event when SDL.SDL_EventType.SDL_WINDOWEVENT = event ->
+                handleWindowEvents sdlEvent.window
+            | _ -> // do nothing
+            System.Threading.Thread.Sleep 1
 
-        libSDLWrapper.shutdown window renderer texture
+        //libSDLWrapper.shutdown window renderer texture
         0 // return 0 as success
+
     | errVal -> errVal
