@@ -278,3 +278,6 @@ tags
 build/
 
 tags.lock
+SDL2.dll
+README-SDL.txt
+

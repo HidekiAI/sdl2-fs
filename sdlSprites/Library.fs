@@ -61,15 +61,16 @@ type TSpriteFrame =
     {
       // wish there is unsigned float, we cannot allow negative FPS!
       FPS: float // i.e. 1.5 means it will render for 1.5 seconds before switching to next frame
-      SpriteID: uint32 } // 1-based SrpiteCell.ID
+      SpriteCellID: uint32 } // 1-based SrpiteCell.ID (see CurrentCellIndex)
 
 type TSpriteAnimation =
     | Frame of TSpriteFrame
-    | Loop of uint32
+    | Loop of uint32    // index back to animation FRAME index
 
 type TSpriteCellAnimation =
-    { CurrentCellIndex: int32
+    { // To get spriteCell/Texture Index, reference animIndex to get SpriteFrame, for Cells are used in multiple/different anim sequences
       CurrentAnimationIndex: int32
+      // Tick is in milliseconds, so if a loop takes less than 1.0 mSec (i.e. 999 microSec) then it'll be 0!
       CurrentAnimationTick: float }
 
 // One animation per sprite; there are some sprites that are from same SpriteCells shared for each Animations
@@ -83,7 +84,7 @@ type TSprite =
       SpriteMatrix: Matrix4x4
 
       // One Animation sequence per Sprite
-      Animation: TSpriteAnimation []
+      Animations: TSpriteAnimation []
       StepDirection: int8 // +1 to loop forward, 0 to not loop at all (if multiple SpriteID[] exist, always at SpriteID[0]), -1 to loop backwards
       SpriteAnimationInfo: TSpriteCellAnimation
 
@@ -157,7 +158,8 @@ type SpriteBuilder(maxSprites) =
                 System.IO.FileInfo file
             fileInfo.Directory.FullName + "/"
         else
-            printf "File does not exsit, cannot extract directory path for '%A'" file
+            SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), sprintf "File does not exsit, cannot extract directory path for '%A'" file)
+            // return path as local (relative) path
             "./"
 
     let loadAnimation file =
@@ -179,10 +181,10 @@ type SpriteBuilder(maxSprites) =
         { ID = spriteId
           Name = spriteFileSprite.Name
           Cells = spriteCells
-          Animation = animations
+          Animations = animations
           StepDirection = spriteFileSprite.Animation.StepDirection
           SpriteAnimationInfo =
-              { CurrentCellIndex = 0
+              {
                 CurrentAnimationIndex = 0
                 CurrentAnimationTick = 0.0 }
           Velocity = Vector4(0.0f, 0.0f, 0.0f, 0.0f)
@@ -193,12 +195,16 @@ type SpriteBuilder(maxSprites) =
           SoundID = 0u
           SpriteMatrix = Matrix4x4.Identity }
 
-    let buildAnimFrame baseSpriteId (frame: TSpriteFileAnimationAnimationFrame option) (loop: uint32 option) =
+    // base CellId should not get incremented until ALL cell from the file is processed
+    // this is because the ID in the json file is relative to that file, so if last file loaded
+    // had updated baseCellID to be 5, and there are ID={0..4}, then from array point of view,
+    // they are actually CellID={5..9}
+    let buildAnimFrame baseSpriteCellId (frame: TSpriteFileAnimationAnimationFrame option) (loop: uint32 option) =
         match frame, loop with
         | Some f, None ->
             let ff =
                 { FPS = f.FPS
-                  SpriteID = f.ID + baseSpriteId }
+                  SpriteCellID = f.ID + baseSpriteCellId }
 
             TSpriteAnimation.Frame(ff)
         | None, Some l -> TSpriteAnimation.Loop(l)
@@ -212,7 +218,7 @@ type SpriteBuilder(maxSprites) =
             getWorkDirectory jsonFileName
         let imageName =
             workDir + spriteAnimationJson.Image
-        printf "Attempting to load texture image '%A'" imageName
+        SDL.SDL_LogDebug(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), sprintf "Attempting to load texture image '%A'" imageName)
         // blit to RAM
         let surface =
             libSDLWrapper.getSurfaceBitMap window renderer false imageName // assum this to throw, so it'll bail out if this fails to load
@@ -257,6 +263,7 @@ type SpriteBuilder(maxSprites) =
             buildAnimationSprites spriteAnimationJson.Sprites spriteAnimationJson.Animations
 
         spriteID <- spriteID + uint32 (sprites.Length)
+        SDL.SDL_LogDebug(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), (sprintf "%A" sprites))
         sprites // TODO: Possibly persist this and expose `this.GetSprites` member?  IMHO if the caller loses scope of this array, it's their fault!
 
     let getWorldPosition sprite =
@@ -264,6 +271,28 @@ type SpriteBuilder(maxSprites) =
         let transY = sprite.SpriteMatrix.M42
         let transZ = sprite.SpriteMatrix.M43
         Vector4(transX, transY, transZ, 0.0f)
+
+    let rec getSpriteFrame (kAnimations: TSpriteAnimation[]) spriteAnimIndex : TSpriteFrame =
+        match kAnimations.[spriteAnimIndex] with
+        | Frame f -> f
+        | Loop l -> getSpriteFrame kAnimations (int32 l)
+    let updateAnimation sprite deltaTicks: TSprite =
+        let info = sprite.SpriteAnimationInfo
+        let mutable nextTick = info.CurrentAnimationTick + deltaTicks
+        let nextAnimFrameIndex =
+            match sprite.Animations.[info.CurrentAnimationIndex] with
+            | Frame f ->
+                if (f.FPS * 1000.0) > nextTick then
+                    nextTick <- (f.FPS * 1000.0) - nextTick // rather than resetting to 0, set it to tick where it should be to make animation smoother
+                    if info.CurrentAnimationIndex + 1 > sprite.Animations.Length then
+                        info.CurrentAnimationIndex
+                    else
+                        info.CurrentAnimationIndex + 1
+                else
+                    info.CurrentAnimationIndex
+            | Loop li -> int32(li)
+        let newInfo = { info with CurrentAnimationIndex = nextAnimFrameIndex; CurrentAnimationTick = nextTick; }
+        { sprite with SpriteAnimationInfo = newInfo; }
 
     ///////////////////////////////////////////////////////// public interfaces
     /// MaxSpriteIndex is useful/needed for iterating Sprites as Entity
@@ -282,44 +311,56 @@ type SpriteBuilder(maxSprites) =
         loadAnimation jsonFilename
         |> load window renderer jsonFilename
 
-    member this.Draw (renderer: IntPtr) window sprites =
+    member this.Draw (renderer: IntPtr) window deltaTicks (sprites: TSprite[]): TSprite[] =
+        printfn "Draw begin (%A sprites)" sprites.Length
         let textureMap = mapTextureIndexToID
 
-        let mutable winWidth = 640
-        let mutable winHeight = 480
+        let mutable winWidth = 1024
+        let mutable winHeight = 768
         SDL.SDL_GL_GetDrawableSize(window, ref winWidth, ref winHeight) // either GL or SDL_Vulkan_GetDrawableSize
 
         let windowRect =
             TSpriteRect(x = 0, y = 0, w = int32 (winWidth), h = int32 (winHeight))
 
-        sprites
-        |> Array.mapi (fun spriteIndex animSprite ->
-            let info = animSprite.SpriteAnimationInfo
-            let cell = animSprite.Cells.[info.CurrentCellIndex]
-            let spriteRect = cell.RelativeCollisionRect
-
-            let textureIndex =
-                textureMap
-                |> Array.find (fun elem -> uint32 (elem.Index) = cell.TextureID)
-                |> fun il -> il.Index
-
-            let texture = textures.[textureIndex]
-            SDL.SDL_RenderCopy(renderer, texture, ref spriteRect, ref windowRect))
+        let updatedSprites =
+            sprites
+            |> Array.mapi (fun spriteIndex animSprite ->
+                let info = animSprite.SpriteAnimationInfo
+                let spriteFrame =
+                    getSpriteFrame animSprite.Animations info.CurrentAnimationIndex
+                let textureIndex =
+                    textureMap
+                    |> Array.find (fun elem -> uint32 (elem.Index) = spriteFrame.SpriteCellID)
+                    |> fun il -> il.Index
+                let cell = animSprite.Cells.[textureIndex]
+                let spriteRect = cell.RelativeCollisionRect
+                let texture = textures.[int32(cell.TextureID)]
+                printfn "%A) Rendering '%A' #%A at (%A, %A, %A, %A) - Win: (%A, %A, %A, %A)" spriteIndex animSprite.Name textureIndex spriteRect.x spriteRect.y spriteRect.w spriteRect.h windowRect.x windowRect.y windowRect.w windowRect.h
+                let success =
+                    SDL.SDL_RenderCopy(renderer, texture, ref spriteRect, ref windowRect)
+                if success <> 0 then
+                    SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Unable to render sprite #%A (texture #%A)" spriteIndex textureIndex)
+                updateAnimation animSprite deltaTicks
+            )
+        printfn "Draw end (%A)" updatedSprites.Length
+        updatedSprites
 
     member this.GetWorldPostionHotPoint sprite =
         let pos = getWorldPosition sprite
         let currentAnimInfo = sprite.SpriteAnimationInfo
+        let animFrame =
+            getSpriteFrame sprite.Animations currentAnimInfo.CurrentAnimationIndex
 
         let hotPointX =
-            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+            sprite.Cells.[int32(animFrame.SpriteCellID)]
                 .RelativeHotPoint.X
 
         let hotPointY =
-            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+            sprite.Cells.[int32(animFrame.SpriteCellID)]
                 .RelativeHotPoint.Y
 
         let hotPointZ =
-            sprite.Cells.[currentAnimInfo.CurrentCellIndex]
+            sprite.Cells.[int32(animFrame.SpriteCellID)]
                 .RelativeHotPoint.Z
         // NOTE: Possibly just use the darn MathLib's vector addition
         Vector4(pos.X + hotPointX, pos.Y + hotPointY, pos.Z + hotPointZ, 0.0f)

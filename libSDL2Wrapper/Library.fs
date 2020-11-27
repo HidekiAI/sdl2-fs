@@ -13,7 +13,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_Init() - Unable to initialze SDL: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
             SDL.SDL_Quit()
             failwith err
 
@@ -26,7 +26,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_Init(Vulkan) - Unable to initialze SDL: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
             SDL.SDL_Quit()
             failwith err
 
@@ -40,7 +40,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_CreateWindow() - Unable to create Window: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
             SDL.SDL_Quit()
             failwith err
         else
@@ -63,7 +63,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_CreateWindow() - Unable to create Window: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
             SDL.SDL_Quit()
             failwith err
         else
@@ -83,7 +83,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_CreateRenderer() - Unable to create Renderer: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
             SDL.SDL_Quit()
             failwith err
         else
@@ -103,7 +103,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_LoadBMP() - Unable to load bitmap '%s': %s" imagePath strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
 
             if destroyOnFail then
                 SDL.SDL_Quit()
@@ -128,7 +128,7 @@ module libSDLWrapper =
             let err =
                 sprintf "SDL_CreateTextureFromSurface() - Unable to create texture suface: %s" strErr
 
-            SDL.SDL_Log(err)
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_ERROR), err)
 
             if destroyOnFail then
                 SDL.SDL_Quit()
