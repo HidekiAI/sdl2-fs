@@ -1,4 +1,5 @@
 open System
+open System.Numerics
 open sdlfs
 open SDL2
 
@@ -39,6 +40,15 @@ let main argv =
         // /home/hidekiai/remote/projects/sdl2-fs/sdllogo.bmp
         let mutable sprites =
             spriteBuilder.Load window renderer @"data/Sonic-Idle.json"
+        // move two sprites into different locations, one is idle, one is impatient
+        let posIdle =
+            let p = spriteBuilder.GetWorldPostionHotPoint sprites.[0]
+            Vector4(p.X + 512f, p.Y + 127f, p.Z, p.W)
+        let posImpatient =
+            let p = spriteBuilder.GetWorldPostionHotPoint sprites.[1]
+            Vector4(p.X + 512f, p.Y + 512f, p.Z, p.W)
+        sprites.[0] <- spriteBuilder.SetWorldTranslate sprites.[0] posIdle
+        sprites.[1] <- spriteBuilder.SetWorldTranslate sprites.[1] posImpatient
 
         let handleWindowEvents (wEvent: SDL.SDL_WindowEvent) =
             match wEvent.windowEvent with

@@ -319,9 +319,6 @@ type SpriteBuilder(maxSprites) =
         let mutable winHeight = 768
         SDL.SDL_GL_GetDrawableSize(window, ref winWidth, ref winHeight) // either GL or SDL_Vulkan_GetDrawableSize
 
-        let windowRect =
-            TSpriteRect(x = 0, y = 0, w = int32 (winWidth), h = int32 (winHeight))
-
         let updatedSprites =
             sprites
             |> Array.mapi (fun spriteIndex animSprite ->
@@ -333,11 +330,26 @@ type SpriteBuilder(maxSprites) =
                     |> Array.find (fun elem -> uint32 (elem.Index) = spriteFrame.SpriteCellID)
                     |> fun il -> il.Index
                 let cell = animSprite.Cells.[textureIndex]
-                let spriteRect = cell.RelativeCollisionRect
+                let spriteCellRect = cell.RelativeCollisionRect
                 let texture = textures.[int32(cell.TextureID)]
-                printfn "%A) Rendering '%A' #%A at (%A, %A, %A, %A) - Win: (%A, %A, %A, %A)" spriteIndex animSprite.Name textureIndex spriteRect.x spriteRect.y spriteRect.w spriteRect.h windowRect.x windowRect.y windowRect.w windowRect.h
+                let pos = getWorldPosition animSprite
+                let posX =
+                    if int(pos.X) > winWidth then
+                        winWidth
+                    else
+                        int(pos.X)
+                let posY =
+                    if int(pos.Y) > winHeight then
+                        winHeight
+                    else
+                        int(pos.Y)
+
+                let spritPositionRect =
+                    TSpriteRect(x = posX, y = posY, w = spriteCellRect.w, h = spriteCellRect.h)
+
+                printfn "%A) Rendering '%A' #%A at (%A, %A, %A, %A) - Win: (%A, %A, %A, %A)" spriteIndex animSprite.Name textureIndex spriteCellRect.x spriteCellRect.y spriteCellRect.w spriteCellRect.h spritPositionRect.x spritPositionRect.y spritPositionRect.w spritPositionRect.h
                 let success =
-                    SDL.SDL_RenderCopy(renderer, texture, ref spriteRect, ref windowRect)
+                    SDL.SDL_RenderCopy(renderer, texture, ref spriteCellRect, ref spritPositionRect)
                 if success <> 0 then
                     SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Unable to render sprite #%A (texture #%A)" spriteIndex textureIndex)
                 updateAnimation animSprite deltaTicks
