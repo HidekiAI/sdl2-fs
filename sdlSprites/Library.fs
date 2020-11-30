@@ -4,7 +4,7 @@
 namespace sdlfs
 
 open System
-open System.Numerics
+open System.Numerics    // for Matrix4x4 - alternatively, look into system.windows.media.media3d
 open SDL2 // we'll be accessing SDL_Texture
 open Newtonsoft.Json // deserialization of Sprite file
 
@@ -35,9 +35,9 @@ type TSpriteRect = SDL.SDL_Rect
 type TSpriteCell =
     { ID: uint32 // 1-based ID, 0 means ghost sprite (has collision rect of 0-pixel, useful for animation to use blank)
       TextureID: uint32 // 1-based ID, you'll have to use this.to lookup where the origin of texture/atlas file was/is from; if this.is 0, but has CollisionRect, you can use it as an invisible sprite for something like invisible walls
-      RelativeBoundary: TSpriteRect // mainly used as dimension of the sprite for clipping, but it is also power of 2 (8, 16, 32, etc)
-      RelativeCollisionRect: TSpriteRect // has to be equal and/or less than the Boundary rect
-      RelativeHotPoint: Vector4 }
+      AbsoluteCellBoundary: TSpriteRect // mainly for rendering, relative to strip/set of Cells
+      RelativeCollisionRect: TSpriteRect // relative (to AbsoluteCellBoundary) dimension of the cell for clipping, collision, etc
+      RelativeHotPoint: Vector3 }
 
 // Sprite Animation:
 // Suppose you'd want to animate sprite cell IDs in sequence of {1, 2, 3, Pause, 4, 3, 4, 3, ...}
@@ -89,8 +89,8 @@ type TSprite =
       SpriteAnimationInfo: TSpriteCellAnimation
 
       // With Acceleration and Velocity, it can deal with primitive Newtonian physics
-      Velocity: Vector4
-      Acceleration: Vector4
+      Velocity: Vector3
+      Acceleration: Vector3
       // Sprite collision based on overlapping of collision boundary, not sprite boundaries.
       // This array of Sprite.ID's that overlaps/collides with this sprite; meaning
       // if spriteA.Overlapped contains spriteB, on spriteB.Overlapped, it contains spriteA
@@ -105,7 +105,10 @@ type TSprite =
       DeleteWhenOffScreen: bool // when you start giving velocities to a sprite, it has the tendencies to just go and disappear...
       SleepWhenOffScreen: bool // possibly, all these  off-screen stuff can be D.U. based...
       // Sound associated to animation, only relevant when AnimationFreqecy is > 0, Loop != 0, and Sprites.Length > 1
-      SoundID: uint32 } // 1-based ID, 0 means no sound
+      SoundID: uint32  // 1-based ID, 0 means no sound
+      // custom function per sprite for collision, edge detection, etc
+      Physics: TSprite (*this*) -> TSpriteRect(*other*) -> uint32 (*winWidth*) -> uint32 (*winHeight*) -> TSprite(*newThis*)
+    }
 
 ///////////////////////////////////////////////////////////// Sprite File
 type TSpriteFileSprite =
@@ -172,10 +175,80 @@ type SpriteBuilder(maxSprites) =
     let buildSpriteCell (animSprite: TSpriteFileSprite) textureIndexId =
         { ID = animSprite.ID
           TextureID = textureIndexId
-          RelativeBoundary = TSpriteRect(x = 0, y = 0, w = int32 (animSprite.Width), h = int32 (animSprite.Height))
+          AbsoluteCellBoundary =
+              TSpriteRect(x = int32(animSprite.X), y = int32(animSprite.Y), w = int32 (animSprite.Width), h = int32 (animSprite.Height))
           RelativeCollisionRect =
               TSpriteRect(x = 0, y = 0, w = int32 (animSprite.CollsionWidth), h = int32 (animSprite.CollisionHeight))
-          RelativeHotPoint = Vector4(float32 (animSprite.HotPointX), float32 (animSprite.HotPointY), 0.0f, 0.0f) }
+          RelativeHotPoint = Vector3(float32(animSprite.HotPointX), float32(animSprite.HotPointY), 0.0f) }
+
+    let rec getSpriteFrame (kAnimations: TSpriteAnimation[]) spriteAnimIndex : TSpriteFrame =
+        match kAnimations.[spriteAnimIndex] with
+        | Frame f -> f
+        | Loop l -> getSpriteFrame kAnimations (int32 l)
+
+    let getCellAndTexturePtr sprite =
+        let info = sprite.SpriteAnimationInfo
+        let spriteFrame =
+            getSpriteFrame sprite.Animations info.CurrentAnimationIndex
+        let textureIndex =
+            mapTextureIndexToID
+            |> Array.find (fun elem -> uint32 (elem.Index) = spriteFrame.SpriteCellID)
+            |> fun il -> il.Index
+        let cell = sprite.Cells.[textureIndex]
+        {| Cell = cell; TexturePtr = textures.[int32(cell.TextureID)] |}
+
+    let setTranslation (matrix: Matrix4x4) (vec3: Vector3): Matrix4x4 =
+        Matrix4x4(
+            matrix.M11, matrix.M12, matrix.M13, matrix.M14,
+            matrix.M21, matrix.M22, matrix.M23, matrix.M24,
+            matrix.M31, matrix.M32, matrix.M33, matrix.M34,
+            vec3.X, vec3.Y, vec3.Z, 1.0f)
+
+    // WorldPosition returned here is without local relative position
+    let getWorldPosition sprite =
+        sprite.SpriteMatrix.Translation
+
+    let getLocalHotPoint sprite =
+        let cell = (getCellAndTexturePtr sprite).Cell
+        cell.RelativeHotPoint
+
+    // WorldPosition returned here is with local relative position added
+    let getWorldPositionRelative sprite =
+        let localPos = getLocalHotPoint sprite
+        let worldPos = getWorldPosition sprite
+        Vector3.Add(worldPos, localPos)
+
+    let defaultSpritePhysics (sprite: TSprite) (otherSprite: TSpriteRect) (winWidth: uint32) (winHeight: uint32): TSprite =
+        printfn "\t\tBegin physics - %A (%A)" sprite.Name sprite.SpriteMatrix.Translation   // DELETE ME
+        let revSign v =
+            if v < 0.0f then
+                Math.Abs(v)
+            else
+                Math.Abs(v) * -1.0f
+        let mutable pos = getWorldPositionRelative sprite
+        let mutable newV = sprite.Velocity
+        let mutable newA = sprite.Acceleration
+        if pos.X > float32(winWidth) || pos.X < 0.0f then
+            if pos.X > float32(winWidth) then
+                pos.X <- float32(winWidth)
+            else
+                pos.X <- 0.0f
+            // bounce
+            newV <- Vector3(0.0f, newV.Y, newV.Z)
+            newA <- Vector3(revSign newA.X, newA.Y, newA.Z)
+            printfn "\t\t\tSTOP!!!!!"   // DELETE ME
+        if pos.Y > float32(winHeight) || pos.Y < 0.0f then
+            if pos.Y > float32(winHeight) then
+                pos.Y <- float32(winHeight)
+            else
+                pos.Y <- 0.0f
+            // bounce
+            newV <- Vector3(newV.X, 0.0f, newV.Z)
+            newA <- Vector3(newA.X, revSign newA.Y, newA.Z)
+        let localPos = getLocalHotPoint sprite
+        let newMatrix = setTranslation sprite.SpriteMatrix (Vector3.Subtract(pos, localPos))
+        printfn "\t\tEnd physics - %A" newMatrix.Translation    // DELETE ME
+        {sprite with SpriteMatrix = newMatrix}
 
     let buildSprite spriteId (spriteFileSprite: TSpriteFileAnimation) (spriteCells: TSpriteCell []) animations =
         { ID = spriteId
@@ -187,13 +260,14 @@ type SpriteBuilder(maxSprites) =
               {
                 CurrentAnimationIndex = 0
                 CurrentAnimationTick = 0.0 }
-          Velocity = Vector4(0.0f, 0.0f, 0.0f, 0.0f)
-          Acceleration = Vector4(0.0f, 0.0f, 0.0f, 0.0f)
+          Velocity = Vector3.Zero
+          Acceleration = Vector3.Zero
           Overlapped = [||]
           DeleteWhenOffScreen = false
           SleepWhenOffScreen = true
           SoundID = 0u
-          SpriteMatrix = Matrix4x4.Identity }
+          SpriteMatrix = Matrix4x4.Identity
+          Physics = defaultSpritePhysics}
 
     // base CellId should not get incremented until ALL cell from the file is processed
     // this is because the ID in the json file is relative to that file, so if last file loaded
@@ -266,23 +340,14 @@ type SpriteBuilder(maxSprites) =
         SDL.SDL_LogDebug(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), (sprintf "%A" sprites))
         sprites // TODO: Possibly persist this and expose `this.GetSprites` member?  IMHO if the caller loses scope of this array, it's their fault!
 
-    let getWorldPosition sprite =
-        let transX = sprite.SpriteMatrix.M41
-        let transY = sprite.SpriteMatrix.M42
-        let transZ = sprite.SpriteMatrix.M43
-        Vector4(transX, transY, transZ, 0.0f)
-
-    let rec getSpriteFrame (kAnimations: TSpriteAnimation[]) spriteAnimIndex : TSpriteFrame =
-        match kAnimations.[spriteAnimIndex] with
-        | Frame f -> f
-        | Loop l -> getSpriteFrame kAnimations (int32 l)
     let updateAnimation sprite deltaTicks: TSprite =
+        let seconds = deltaTicks / 1000.0
         let info = sprite.SpriteAnimationInfo
         let mutable nextTick = info.CurrentAnimationTick + deltaTicks
         let nextAnimFrameIndex =
             match sprite.Animations.[info.CurrentAnimationIndex] with
             | Frame f ->
-                if (f.FPS * 1000.0) > nextTick then
+                if (f.FPS * 1000.0) <= nextTick then
                     nextTick <- (f.FPS * 1000.0) - nextTick // rather than resetting to 0, set it to tick where it should be to make animation smoother
                     if info.CurrentAnimationIndex + 1 > sprite.Animations.Length then
                         info.CurrentAnimationIndex
@@ -292,13 +357,132 @@ type SpriteBuilder(maxSprites) =
                     info.CurrentAnimationIndex
             | Loop li -> int32(li)
         let newInfo = { info with CurrentAnimationIndex = nextAnimFrameIndex; CurrentAnimationTick = nextTick; }
-        { sprite with SpriteAnimationInfo = newInfo; }
+        // calculate new velocity based on Acceleration and ticks
+        let acceleration =
+            Vector3.Multiply(sprite.Acceleration, float32(seconds))
+        let newVelocity =
+            Vector3.Add(sprite.Velocity, acceleration)
+        let translateWorld =
+            Vector3.Add((getWorldPosition sprite), newVelocity)
+        let newMatrix =
+            setTranslation sprite.SpriteMatrix translateWorld
+
+        printfn "\t%A) %A (%A sec) @ v=%A a=%A - Index=%A/%A (tick=%A)"
+            sprite.Name translateWorld seconds acceleration newVelocity nextAnimFrameIndex sprite.Animations.Length nextTick // DELETE ME
+
+        { sprite with SpriteAnimationInfo = newInfo; Velocity = newVelocity; SpriteMatrix = newMatrix }
+
+    // from Wikipedia:
+    // struct EulerAngles {
+    //     double roll, pitch, yaw;
+    // };
+    //
+    // EulerAngles ToEulerAngles(Quaternion q) {
+    //     EulerAngles angles;
+    //
+    //     // roll (x-axis rotation)
+    //     double sinrCosp = 2 * (q.w * q.x + q.y * q.z);
+    //     double cosrCosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    //     angles.roll = std::atan2(sinrCosp, cosrCosp);
+    //
+    //     // pitch (y-axis rotation)
+    //     double sinp = 2 * (q.w * q.y - q.z * q.x);
+    //     if (std::abs(sinp) >= 1)
+    //         angles.pitch = std::copysign(M_PI / 2, sinp); // use 90 degrees if out of range
+    //     else
+    //         angles.pitch = std::asin(sinp);
+    //
+    //     // yaw (z-axis rotation)
+    //     double cosyCosp = 2 * (q.w * q.z + q.x * q.y);
+    //     double cosyCosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    //     angles.yaw = std::atan2(cosyCosp, cosyCosp);
+    //
+    //     return angles;
+    // }
+    let toEulerAngles (quaternion: Quaternion) =
+        // roll (x-axis rotation)
+        let sinrCosp = 2.0f * (quaternion.W * quaternion.X + quaternion.Y * quaternion.Z)
+        let cosrCosp = 1.0f - 2.0f * (quaternion.X * quaternion.X + quaternion.Y * quaternion.Y)
+        let roll = Math.Atan2(float(sinrCosp), float(cosrCosp))
+
+        // pitch (y-axis rotation)
+        let sinp = 2.0f * (quaternion.W * quaternion.Y - quaternion.Z * quaternion.X)
+        let pitch =
+            if (Math.Abs(sinp) >= 1.0f) then
+                let sign =
+                    if sinp < 0.0f then
+                        -1.0
+                    else
+                        1.0
+                (Math.PI / 2.0) * sign // use 90 degrees if out of range
+            else
+                Math.Asin(float(sinp))
+
+        // yaw (z-axis rotation)
+        let cosyCosp = 2.0f * (quaternion.W * quaternion.Z + quaternion.X * quaternion.Y)
+        let cosyCosp = 1.0f - 2.0f * (quaternion.Y * quaternion.Y + quaternion.Z * quaternion.Z);
+        let yaw = Math.Atan2(float(cosyCosp), float(cosyCosp))
+        {| Yaw = yaw; Pitch = pitch; Roll = roll |}
+
+    let getRadian orientationMatrix =
+        let mutable scale = Vector3.One
+        let mutable rotation = Quaternion.Identity
+        let mutable translation = Vector3.Zero
+        // NOTE: Numeric.Quaternion references Y-Up, Z-forward (right hand rule)
+        if Matrix4x4.Decompose(orientationMatrix, ref scale, ref rotation, ref translation) then
+            let angles = toEulerAngles rotation
+            angles.Yaw
+        else
+            0.0
+
+    let convertDegreesToRadian degrees =
+        System.Math.PI * degrees / 180.0
+
+    // sort of like lerping rotate, but only returns the orientation matrix
+    let reOrient (orientationMatrix: Matrix4x4) deltaRadian: Matrix4x4 =
+        let rotZ = Matrix4x4.CreateRotationZ(deltaRadian)
+        Matrix4x4.Lerp(orientationMatrix, rotZ, 1.0f)
+
+    // fortunately, for 2D sprite, we only have to worry about orientations in
+    // X-Y plane (yaw, Rotate about Z-axis) nor do we have to worry about gimble-lock (CreateFromYawPitchRoll())
+    // if you want to get absolute destination, set lerp percentage to 1.0
+    // but for smooth rotation animation, try setting lerp to about 25%, and call it
+    // 4 times to get to destination orientation
+    let rotate sprite radian (lerpWeight: float32) =
+        let rotZ = Matrix4x4.CreateRotationZ(radian)
+        let m = sprite.SpriteMatrix
+        let lerp = Matrix4x4.Lerp(m, rotZ, lerpWeight)
+        {sprite with SpriteMatrix = lerp}
+    let rotateAbs sprite radian =
+        rotate sprite radian 1.0f    // lerp at 100%
+
+    // Scaling is a multiplier; if current scale is set to 2.0, and you pass another 2.0,
+    // then the new scale will become 4.0.  Use scaleAbsolute instead if you want
+    // to (for example) reset it back to 1.0 scale
+    let scale sprite xScale yScale zScale =
+        let mutable m = sprite.SpriteMatrix
+        m.M11 <- m.M11 * xScale
+        m.M22 <- m.M22 * yScale
+        m.M33 <- m.M33 * zScale
+        {sprite with SpriteMatrix = m}
+    let scaleAbsolute sprite xScale yScale zScale =
+        let mutable m = sprite.SpriteMatrix
+        m.M11 <- xScale
+        m.M22 <- yScale
+        m.M33 <- zScale
+        {sprite with SpriteMatrix = m}
+
+    let setVelocity sprite newVelocity =
+        {sprite with Velocity = newVelocity}
+
+    let setAcceleration sprite newAccel =
+        {sprite with Acceleration = newAccel}
 
     ///////////////////////////////////////////////////////// public interfaces
     /// MaxSpriteIndex is useful/needed for iterating Sprites as Entity
     member this.MaxSpriteIndex = spriteID
 
-    /// Perhaps this should be called CleanUp or Destroy?
+    /// Dispose/cleanup non-GC resources
     member this.Dispose =
         for tIndex in 0 .. textureIndex do
             SDL.SDL_DestroyTexture(textures.[tIndex])
@@ -306,104 +490,161 @@ type SpriteBuilder(maxSprites) =
 
         textureIndex <- 0
 
-    /// Tools (i.e. world editor) and world systems just calls this and will get list of Sprite[]
+    /// Load sprite definitions JSON file
     member this.Load window renderer jsonFilename =
         loadAnimation jsonFilename
         |> load window renderer jsonFilename
 
-    member this.Draw (renderer: IntPtr) window deltaTicks (sprites: TSprite[]): TSprite[] =
-        printfn "Draw begin (%A sprites)" sprites.Length
-        let textureMap = mapTextureIndexToID
-
-        let mutable winWidth = 1024
-        let mutable winHeight = 768
-        SDL.SDL_GL_GetDrawableSize(window, ref winWidth, ref winHeight) // either GL or SDL_Vulkan_GetDrawableSize
+    /// Render sprites to window and update (animate) with new sprite list
+    /// Will update animation prior to rendering sprite cells
+    member this.DrawAndUpdate window (renderer: IntPtr) deltaTicks (sprites: TSprite[]): TSprite[] =
+        let winWidth = ref 0
+        let winHeight = ref 0
+        if SDL.SDL_GetRendererOutputSize(renderer, winWidth, winHeight) <> 0 then
+            SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "SDL_GetDesktopDisplayMode failed: %s" (SDL.SDL_GetError()))
+            failwith "Unable to retrieve Renderer dimension"
+        printfn "Draw begin (%A sprites) - Dim: %A x %A" sprites.Length winWidth.Value winHeight.Value   // DELETE ME
 
         let updatedSprites =
             sprites
             |> Array.mapi (fun spriteIndex animSprite ->
-                let info = animSprite.SpriteAnimationInfo
-                let spriteFrame =
-                    getSpriteFrame animSprite.Animations info.CurrentAnimationIndex
-                let textureIndex =
-                    textureMap
-                    |> Array.find (fun elem -> uint32 (elem.Index) = spriteFrame.SpriteCellID)
-                    |> fun il -> il.Index
-                let cell = animSprite.Cells.[textureIndex]
-                let spriteCellRect = cell.RelativeCollisionRect
-                let texture = textures.[int32(cell.TextureID)]
-                let pos = getWorldPosition animSprite
-                let posX =
-                    if int(pos.X) > winWidth then
-                        winWidth
-                    else
-                        int(pos.X)
-                let posY =
-                    if int(pos.Y) > winHeight then
-                        winHeight
-                    else
-                        int(pos.Y)
+                printfn "Begin %A at %A" animSprite.Name (getWorldPositionRelative animSprite)  // DELETE ME
+                // animate and translate sprite
+                let mutable updatedSprite =
+                    updateAnimation animSprite deltaTicks
+                // once moved, do Physics test immediately
+                updatedSprite <-
+                    updatedSprite.Physics updatedSprite (TSpriteRect(x=0, y=0, w=0, h=0)) (uint32 winWidth.Value) (uint32 winHeight.Value)
+                // now render it
+                let pos = getWorldPositionRelative updatedSprite
+                let textureAndCell = getCellAndTexturePtr updatedSprite
+                let srcCellRect = textureAndCell.Cell.AbsoluteCellBoundary
+                let cellDestRect =
+                    TSpriteRect(x = int(pos.X), y = int(pos.Y), w = srcCellRect.w, h = srcCellRect.h)
 
-                let spritPositionRect =
-                    TSpriteRect(x = posX, y = posY, w = spriteCellRect.w, h = spriteCellRect.h)
-
-                printfn "%A) Rendering '%A' #%A at (%A, %A, %A, %A) - Win: (%A, %A, %A, %A)" spriteIndex animSprite.Name textureIndex spriteCellRect.x spriteCellRect.y spriteCellRect.w spriteCellRect.h spritPositionRect.x spritPositionRect.y spritPositionRect.w spritPositionRect.h
-                let success =
-                    SDL.SDL_RenderCopy(renderer, texture, ref spriteCellRect, ref spritPositionRect)
-                if success <> 0 then
-                    SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Unable to render sprite #%A (texture #%A)" spriteIndex textureIndex)
-                updateAnimation animSprite deltaTicks
+                printfn "%A) Rendering '%A' #%A at Pos:%A(%A)); src=(%A, %A, %A, %A)/dest=(%A, %A, %A, %A)" spriteIndex updatedSprite.Name textureIndex updatedSprite.SpriteMatrix.Translation (getWorldPositionRelative updatedSprite)
+                        srcCellRect.x srcCellRect.y srcCellRect.w srcCellRect.h cellDestRect.x cellDestRect.y cellDestRect.w cellDestRect.h   // DELETE ME
+                if SDL.SDL_RenderCopy(renderer, textureAndCell.TexturePtr, ref srcCellRect, ref cellDestRect) <> 0 then
+                    SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Unable to render sprite #%A (texture #%A) - %A" spriteIndex textureIndex (SDL.SDL_GetError()))
+                updatedSprite
             )
-        printfn "Draw end (%A)" updatedSprites.Length
+        printfn "Draw end (%A)" updatedSprites.Length   // DELETE ME
         updatedSprites
 
-    member this.GetWorldPostionHotPoint sprite =
-        let pos = getWorldPosition sprite
-        let currentAnimInfo = sprite.SpriteAnimationInfo
-        let animFrame =
-            getSpriteFrame sprite.Animations currentAnimInfo.CurrentAnimationIndex
+    /// get HotPoint position in World coordinate, used for positioning
+    /// Note that HotPoint may not be upper left corner of the sprite cell, but
+    /// rather usually at bottom center of the cell mainly for animation reason.
+    /// For example, imaging X-flipping a player icon based on hotpoint at upper left
+    /// corner of the cell versus when the hotpoint is at the center of the cell, and
+    /// the sprite is at the edge wall.  The flipping may cause the sprite to get embedded
+    /// into the wall if the hotpoint is at the upper left corner.
+    /// NOTE: The position is based on world position plus local (relative) position,
+    ///       hence it returns as Vector rather than as sprite that would be updated.
+    member this.GetWorldHotPoint sprite =
+        getWorldPositionRelative sprite
 
-        let hotPointX =
-            sprite.Cells.[int32(animFrame.SpriteCellID)]
-                .RelativeHotPoint.X
+    /// get HotPoint position in local position, used for positioning.
+    /// Local position are the usually set to (X=0, Y=0, Z=0) for all sprites and parent sprites.
+    /// Sub/child sprites will be relative position to parent sprite relative to parent HotPoint
+    /// This is rarely called (or used) by users and used more by animation system for sprite
+    /// tree structure.  Possibly can be useful for example the avatar sprite holds a sword in
+    /// hand, and  you'd need to know the hotpoint of the sword relative to player avatar, so that
+    /// a fireball can be emitted from the sword hotpoint relative to player avatar...
+    member this.GetLocalHotPoint sprite =
+        getLocalHotPoint sprite
 
-        let hotPointY =
-            sprite.Cells.[int32(animFrame.SpriteCellID)]
-                .RelativeHotPoint.Y
-
-        let hotPointZ =
-            sprite.Cells.[int32(animFrame.SpriteCellID)]
-                .RelativeHotPoint.Z
-        // NOTE: Possibly just use the darn MathLib's vector addition
-        Vector4(pos.X + hotPointX, pos.Y + hotPointY, pos.Z + hotPointZ, 0.0f)
-
-    member this.WorldTranslateLocal sprite (localPositionVector: Vector4) =
-        let pos = getWorldPosition sprite
-
+    /// This method will translate based on local position.  For example, you'd like to translate
+    /// 5 pixels right and 10 pixels down (X=5, Y=10, Z=0) from the current (world) position
+    /// at (X=1000, Y=500, Z=0) which will translate to new position (X=1005, Y=510, Z=0)
+    /// It has nothing to do with Sprite local position that are used for parent-child sprite
+    /// tree structure.
+    member this.SetWorldTranslateLocal sprite (localPositionVector: Vector3) =
+        let pos = getWorldPositionRelative sprite
         let newPos =
-            Vector4(pos.X + localPositionVector.X, pos.Y + localPositionVector.Y, pos.Z + localPositionVector.Z, 0.0f)
-
-        let m = sprite.SpriteMatrix
-
-        let newMatrix =
-            Matrix4x4
-                (m.M11, m.M12, m.M13, m.M14,
-                 m.M21, m.M22, m.M23, m.M24,
-                 m.M31, m.M32, m.M33, m.M34,
-                 newPos.X, newPos.Y, newPos.Z, m.M44)
-
-        let newSprite = { sprite with SpriteMatrix = newMatrix }
+            Vector3(pos.X + localPositionVector.X, pos.Y + localPositionVector.Y, pos.Z + localPositionVector.Z)
+        let mutable m = sprite.SpriteMatrix
+        m.Translation <- newPos
+        let newSprite = { sprite with SpriteMatrix = m }
         newSprite
 
-    member this.SetWorldTranslate sprite (absoluteWorldPositionVector: Vector4) =
-        let m = sprite.SpriteMatrix
-
-        let newMatrix =
-            Matrix4x4
-                (m.M11, m.M12, m.M13, m.M14,
-                 m.M21, m.M22, m.M23, m.M24,
-                 m.M31, m.M32, m.M33, m.M34,
-                 absoluteWorldPositionVector.X, absoluteWorldPositionVector.Y, absoluteWorldPositionVector.Z, m.M44)
-
-        let newSprite = { sprite with SpriteMatrix = newMatrix }
+    /// Sets the HotPoint's translation position in World coordinates
+    member this.SetWorldTranslate sprite (absoluteWorldPositionVector: Vector3) =
+        let mutable m = sprite.SpriteMatrix
+        m.Translation <- absoluteWorldPositionVector
+        let newSprite = { sprite with SpriteMatrix = m }
         newSprite
+
+    /// XFlip toggle
+    member this.XFlip sprite: TSprite =
+        // get current orientation and calculate new radian value
+        let radian = getRadian sprite.SpriteMatrix
+        let flip = radian + (convertDegreesToRadian 180.0)
+        rotateAbs sprite (float32 flip)
+
+    /// YFlip toggle
+    member this.YFlip sprite: TSprite =
+        // get current orientation and calculate new radian value
+        let radian = getRadian sprite.SpriteMatrix
+        let newRadian = radian + (convertDegreesToRadian 270.0)
+        rotateAbs sprite (float32 newRadian)
+
+    /// Rotate in radian angle
+    member this.RotateRad sprite radian: TSprite =
+        rotateAbs sprite radian
+
+    /// Rotate in degrees angle
+    member this.RotateDeg sprite degrees: TSprite =
+        let radian = convertDegreesToRadian degrees
+        rotateAbs sprite (float32 radian)
+
+    /// Scale
+    member this.Scale sprite xScale yScale: TSprite =
+        scale sprite xScale yScale 1.0f
+    /// Uniform scaling without deformation on dimension ratio
+    member this.ScaleUniform sprite xyScale: TSprite =
+        scale sprite xyScale xyScale 1.0f
+
+    /// Set Velocity=0
+    member this.StopSpeed sprite =
+        setVelocity sprite Vector3.Zero
+
+    /// Set Acceleration=0
+    member this.StopAccel sprite =
+        setAcceleration sprite Vector3.Zero
+
+    /// Set both a=0, v=0
+    member this.Stop sprite =
+        let mutable s = setVelocity sprite Vector3.Zero
+        setAcceleration s Vector3.Zero
+
+    /// Velocity
+    member this.WorldVelocity sprite: Vector3 =
+        sprite.Velocity
+
+    /// setting world velocity
+    member this.SetWorldVelocity sprite speed =
+        setVelocity sprite speed
+
+    /// adding delta (neg/pos) world velocity - recommend using Accel instead!
+    member this.AddWorldVelocity sprite deltaV =
+        let newSpeed =
+            Vector3.Add(sprite.Velocity, deltaV)
+        setVelocity sprite newSpeed
+
+    /// Acceleration
+    member this.WorldAccel sprite: Vector3 =
+        sprite.Acceleration
+
+    /// setting world velocity
+    member this.SetWorldAccel sprite accel =
+        setAcceleration sprite accel
+
+    /// adding delta (neg/pos) acceleration - recommend stopping first or setting
+    /// absolute acceleration rather than decelerating/accelerating
+    member this.AddWorldAccel sprite deltaA =
+        let newAccel =
+            Vector3.Add(sprite.Acceleration, deltaA)
+        setAcceleration sprite newAccel
+
+    member this.SetPhysicsCallback sprite callback =
+        {sprite with Physics = callback}

@@ -91,6 +91,7 @@ module libSDLWrapper =
 
     /// Surface makes it convinient to software-blit from RAM
     let getSurfaceBitMap window renderer destroyOnFail imagePath =
+        SDL.SDL_LogDebug(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Loading background image from %A" imagePath)
         let pInterOp = SDL.SDL_LoadBMP(imagePath)
 
         if pInterOp.Equals(IntPtr.Zero) then
@@ -136,13 +137,18 @@ module libSDLWrapper =
             else
                 IntPtr.Zero
         else
-            if destroySurfaceOnSuccess = true then SDL.SDL_FreeSurface(surfaceBitMap) // we really don't need this surface once Texture has been created...
+            if destroySurfaceOnSuccess then SDL.SDL_FreeSurface(surfaceBitMap) // we really don't need this surface once Texture has been created...
             pInterOp
+
+    let doRender renderer texture =
+        // pass NULL to scale to full window size
+        SDL.SDL_RenderCopy(renderer, texture, IntPtr.Zero, IntPtr.Zero)
 
     let doTestRender renderer texture (syncMS: uint32) =
         for i in [ 0 .. 5 ] do // 1000mSec x 5 = 5 seconds
             SDL.SDL_RenderClear(renderer) |> ignore
 
+            // pass NULL to scale to full window size
             SDL.SDL_RenderCopy(renderer, texture, IntPtr.Zero, IntPtr.Zero)
             |> ignore
 

@@ -11,45 +11,56 @@ module MEvents =
 
 [<EntryPoint>]
 let main argv =
-    let imageName = @"sdllogo.bmp" // TODO: Pass this via arg
+    let bgImageName = @"sdllogo.bmp" // TODO: Pass this via arg
 
-    let absPath =
+    let absPathBg =
         System.IO.Directory.GetCurrentDirectory()
         + @"/"
-        + imageName
-
-    printfn "Hello World from F#! - %A" absPath
+        + bgImageName
 
     match libSDLWrapper.initSDLVideo with
     | 0 ->
-        let window =
-            libSDLWrapper.getWindow "Hello World!" 100 100 1024 768
+        // setup Window and Renderer
+        let winPosX = 100
+        let winPosY = 100
+        let winWidth = ref 1024
+        let winHeight = ref 768
+        let winTitle = @"F# SDL2 Test"
+        let window:IntPtr =
+            libSDLWrapper.getWindow winTitle winPosX winPosY winWidth.Value winHeight.Value
+        let renderer:IntPtr = libSDLWrapper.getRenderer window
+        // sanity check to make sure we got the right window and renderer
+        winWidth := 0
+        winHeight := 0
+        SDL.SDL_GetWindowSize(window, winWidth, winHeight) // either GL or SDL_Vulkan_GetDrawableSize
+        SDL.SDL_LogInfo(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), sprintf "Created window size (%A x %A)" winWidth.Value winHeight.Value)
+        winWidth := 0
+        winHeight := 0
+        SDL.SDL_GetRendererOutputSize(renderer, winWidth, winHeight)
+        |> ignore
+        SDL.SDL_LogInfo(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_APPLICATION), sprintf "Created renderer size (%A x %A)" winWidth.Value winHeight.Value)
 
-        let renderer = libSDLWrapper.getRenderer window
+        // load background image
+        let bgSurfaceBitMap =
+            libSDLWrapper.getSurfaceBitMap window renderer true absPathBg
+        let bgTexture =
+            libSDLWrapper.getTexture window renderer bgSurfaceBitMap true true
+        libSDLWrapper.doRender renderer bgTexture
+        |> ignore
 
-        let surfaceBitMap =
-            libSDLWrapper.getSurfaceBitMap window renderer true absPath
-
-        let texture =
-            libSDLWrapper.getTexture window renderer surfaceBitMap true true
-
-        libSDLWrapper.doTestRender renderer texture 1000u // 1000mSec per loop
-
+        // Now load test animation sprites and build it
         let spriteBuilder = sdlfs.SpriteBuilder(32)
-
-        // /home/hidekiai/remote/projects/sdl2-fs/sdllogo.bmp
         let mutable sprites =
             spriteBuilder.Load window renderer @"data/Sonic-Idle.json"
         // move two sprites into different locations, one is idle, one is impatient
-        let posIdle =
-            let p = spriteBuilder.GetWorldPostionHotPoint sprites.[0]
-            Vector4(p.X + 512f, p.Y + 127f, p.Z, p.W)
-        let posImpatient =
-            let p = spriteBuilder.GetWorldPostionHotPoint sprites.[1]
-            Vector4(p.X + 512f, p.Y + 512f, p.Z, p.W)
-        sprites.[0] <- spriteBuilder.SetWorldTranslate sprites.[0] posIdle
-        sprites.[1] <- spriteBuilder.SetWorldTranslate sprites.[1] posImpatient
+        let posIdle = Vector3(512f, 127f, 0.0f)
+        sprites.[0] <- spriteBuilder.SetWorldTranslateLocal sprites.[0] posIdle
+        let posImpatient = Vector3(512f, 512f, 0.0f)
+        sprites.[1] <- spriteBuilder.SetWorldTranslateLocal sprites.[1] posImpatient
+        sprites.[1] <- spriteBuilder.XFlip sprites.[1]
+        sprites.[1] <- spriteBuilder.AddWorldAccel sprites.[1] (Vector3(0.5f, 0.5f, 0.0f))
 
+        // Event loop
         let handleWindowEvents (wEvent: SDL.SDL_WindowEvent) =
             match wEvent.windowEvent with
             | event when SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED = event ->
@@ -78,6 +89,11 @@ let main argv =
         while (not quit) do
             let startTime =
                 System.Diagnostics.Stopwatch.StartNew()
+            if SDL.SDL_RenderClear(renderer) <> 0 then
+                let strErr = SDL.SDL_GetError()
+                let err =
+                    sprintf "SDL_RenderClear() - Unable to SDL_RenderClear: %s" strErr
+                SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), err)
             // first procecess any O/S events
             SDL.SDL_PumpEvents()
             while ((SDL.SDL_PollEvent(ref sdlEvent) = 1) && (not quit)) do
@@ -102,8 +118,12 @@ let main argv =
                         |> ignore
             // Now do other gameloop stuffs
             if not quit then
+                // First, present BG
+                if libSDLWrapper.doRender renderer bgTexture <> 0 then
+                    failwith "Unable to render background"
+                // Next, animate
                 let newSprites =
-                    spriteBuilder.Draw renderer window deltaTMSec sprites
+                    spriteBuilder.DrawAndUpdate window renderer deltaTMSec sprites
                 sprites <- newSprites
             // each game ticks are 1mSec
             SDL.SDL_Delay(1u)
@@ -115,7 +135,7 @@ let main argv =
 #if DEBUG
             // for now, die after 30 seconds
             tryCount <- tryCount + 1
-            if tryCount > 1000 * 30 then
+            if tryCount > (1000 * 30) then
                 quit <- true
 #endif
 
