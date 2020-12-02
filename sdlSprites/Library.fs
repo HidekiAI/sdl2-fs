@@ -219,7 +219,7 @@ type SpriteBuilder(maxSprites) =
         Vector3.Add(worldPos, localPos)
 
     let defaultSpritePhysics (sprite: TSprite) (otherSprite: TSpriteRect) (winWidth: uint32) (winHeight: uint32): TSprite =
-        printfn "\t\tBegin physics - %A (%A)" sprite.Name sprite.SpriteMatrix.Translation   // DELETE ME
+        //printfn "\t\tBegin physics - %A (%A)" sprite.Name sprite.SpriteMatrix.Translation   // DELETE ME
         let revSign v =
             if v < 0.0f then
                 Math.Abs(v)
@@ -236,7 +236,7 @@ type SpriteBuilder(maxSprites) =
             // bounce
             newV <- Vector3(0.0f, newV.Y, newV.Z)
             newA <- Vector3(revSign newA.X, newA.Y, newA.Z)
-            printfn "\t\t\tSTOP!!!!!"   // DELETE ME
+            //printfn "\t\t\tSTOP!!!!!"   // DELETE ME
         if pos.Y > float32(winHeight) || pos.Y < 0.0f then
             if pos.Y > float32(winHeight) then
                 pos.Y <- float32(winHeight)
@@ -247,7 +247,7 @@ type SpriteBuilder(maxSprites) =
             newA <- Vector3(newA.X, revSign newA.Y, newA.Z)
         let localPos = getLocalHotPoint sprite
         let newMatrix = setTranslation sprite.SpriteMatrix (Vector3.Subtract(pos, localPos))
-        printfn "\t\tEnd physics - %A" newMatrix.Translation    // DELETE ME
+        //printfn "\t\tEnd physics - %A" newMatrix.Translation    // DELETE ME
         {sprite with SpriteMatrix = newMatrix}
 
     let buildSprite spriteId (spriteFileSprite: TSpriteFileAnimation) (spriteCells: TSpriteCell []) animations =
@@ -367,8 +367,8 @@ type SpriteBuilder(maxSprites) =
         let newMatrix =
             setTranslation sprite.SpriteMatrix translateWorld
 
-        printfn "\t%A) %A (%A sec) @ v=%A a=%A - Index=%A/%A (tick=%A)"
-            sprite.Name translateWorld seconds acceleration newVelocity nextAnimFrameIndex sprite.Animations.Length nextTick // DELETE ME
+        //printfn "\t%A) %A (%A sec) @ v=%A a=%A - Index=%A/%A (tick=%A)"
+        //    sprite.Name translateWorld seconds acceleration newVelocity nextAnimFrameIndex sprite.Animations.Length nextTick // DELETE ME
 
         { sprite with SpriteAnimationInfo = newInfo; Velocity = newVelocity; SpriteMatrix = newMatrix }
 
@@ -503,12 +503,12 @@ type SpriteBuilder(maxSprites) =
         if SDL.SDL_GetRendererOutputSize(renderer, winWidth, winHeight) <> 0 then
             SDL.SDL_LogCritical(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "SDL_GetDesktopDisplayMode failed: %s" (SDL.SDL_GetError()))
             failwith "Unable to retrieve Renderer dimension"
-        printfn "Draw begin (%A sprites) - Dim: %A x %A" sprites.Length winWidth.Value winHeight.Value   // DELETE ME
+        //printfn "Draw begin (%A sprites) - Dim: %A x %A" sprites.Length winWidth.Value winHeight.Value   // DELETE ME
 
         let updatedSprites =
             sprites
             |> Array.mapi (fun spriteIndex animSprite ->
-                printfn "Begin %A at %A" animSprite.Name (getWorldPositionRelative animSprite)  // DELETE ME
+                //printfn "Begin %A at %A" animSprite.Name (getWorldPositionRelative animSprite)  // DELETE ME
                 // animate and translate sprite
                 let mutable updatedSprite =
                     updateAnimation animSprite deltaTicks
@@ -522,13 +522,13 @@ type SpriteBuilder(maxSprites) =
                 let cellDestRect =
                     TSpriteRect(x = int(pos.X), y = int(pos.Y), w = srcCellRect.w, h = srcCellRect.h)
 
-                printfn "%A) Rendering '%A' #%A at Pos:%A(%A)); src=(%A, %A, %A, %A)/dest=(%A, %A, %A, %A)" spriteIndex updatedSprite.Name textureIndex updatedSprite.SpriteMatrix.Translation (getWorldPositionRelative updatedSprite)
-                        srcCellRect.x srcCellRect.y srcCellRect.w srcCellRect.h cellDestRect.x cellDestRect.y cellDestRect.w cellDestRect.h   // DELETE ME
+                //printfn "%A) Rendering '%A' #%A at Pos:%A(%A)); src=(%A, %A, %A, %A)/dest=(%A, %A, %A, %A)" spriteIndex updatedSprite.Name textureIndex updatedSprite.SpriteMatrix.Translation (getWorldPositionRelative updatedSprite)
+                //        srcCellRect.x srcCellRect.y srcCellRect.w srcCellRect.h cellDestRect.x cellDestRect.y cellDestRect.w cellDestRect.h   // DELETE ME
                 if SDL.SDL_RenderCopy(renderer, textureAndCell.TexturePtr, ref srcCellRect, ref cellDestRect) <> 0 then
                     SDL.SDL_LogError(int(SDL.SDL_LogCategory.SDL_LOG_CATEGORY_RENDER), sprintf "Unable to render sprite #%A (texture #%A) - %A" spriteIndex textureIndex (SDL.SDL_GetError()))
                 updatedSprite
             )
-        printfn "Draw end (%A)" updatedSprites.Length   // DELETE ME
+        //printfn "Draw end (%A)" updatedSprites.Length   // DELETE ME
         updatedSprites
 
     /// get HotPoint position in World coordinate, used for positioning
