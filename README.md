@@ -19,6 +19,7 @@ Pure dotnet-core (not .NET Framework 3 or 4), non-Mono depentedant F# sample cod
 * SDL2-CS is just a wrapper, I started doing my own dllImport but honestly, I'm purely lazy, so decided to just take SDL2-CS (just the src dir) instead
 * Possibly, will contact the maintainer of SDL2-CS and request a pure dotnetcore CSProj file; either that or fork and just remove the author's csproj
 * Sample code from: https://www.willusher.io/sdl2%20tutorials/2013/08/17/lesson-1-hello-world
+* Finally, I'm no expert of Functional Programming, but as far as it being from my experiences, grabbing fragments/snippets of codes from F# and making it your own is almost like doing a 500 pieces jigsaw puzzles where they are all white pieces...  Rather than trying to take implementations of pieces, it's better to just try to comprehend its intentions and write your own, it will most likely be quicker!
 
 ## Future work
 * If (or when) have time, will completely port SDL2-CS to F# rather than having C# be the InterOp to InterOp; as mentioned, I got tired of doing `[<dllImport>]` to extern, and found SDL2-CS doing the same work, so decided not to reinvent the wheel
